@@ -5,173 +5,205 @@ import { removeBackground } from '@imgly/background-removal';
 import './App.css';
 
 function App() {
-  // Estados
-  const [barcode, setBarcode] = useState(null); // El numero del codigo
-  const [productPhoto, setProductPhoto] = useState(null); // La foto final del producto
-  const [processedImage, setProcessedImage] = useState(null); // La imagen final sin fondo
+  // --- ESTADOS DE LA APP ---
+  // Paso 1: 'ESCANEAR_CODIGO'
+  // Paso 2: 'CONFIRMAR_CODIGO' (Vemos el numero y decidimos si pasar a la foto)
+  // Paso 3: 'TOMAR_FOTO_PRODUCTO' (Aquí sacamos la foto real)
+  // Paso 4: 'PROCESANDO' (IA trabajando)
+  // Paso 5: 'TERMINADO'
+  const [paso, setPaso] = useState('ESCANEAR_CODIGO');
   
-  const [loadingBarcode, setLoadingBarcode] = useState(false); // Cargando lectura de barras
-  const [loadingIA, setLoadingIA] = useState(false); // Cargando proceso de IA
+  const [barcode, setBarcode] = useState(null);
+  const [imagenFinal, setImagenFinal] = useState(null);
   
-  const [cameraError, setCameraError] = useState(null);
-
   const webcamRef = useRef(null);
-  // Instanciamos el lector una sola vez
   const codeReader = useRef(new BrowserMultiFormatReader());
 
-
-  // --- LÓGICA NUEVA: SACAR FOTO AL CÓDIGO DE BARRAS ---
-  const captureAndReadBarcode = async () => {
-    if (!webcamRef.current) return;
-    
-    setLoadingBarcode(true);
-    // 1. Capturamos la imagen fija en alta calidad (PNG)
-    const imageSrc = webcamRef.current.getScreenshot();
-
-    if (imageSrc) {
-      try {
-        console.log("Analizando foto del código...");
-        // 2. Intentamos leer el código de esa imagen estática
-        const result = await codeReader.current.decodeFromImage(undefined, imageSrc);
-        console.log("¡Código encontrado!", result.text);
-        setBarcode(result.text);
-        // ¡Éxito! El estado 'barcode' cambiará la interfaz al siguiente paso.
-
-      } catch (err) {
-        console.error("No se pudo leer el código en la foto:", err);
-        alert("❌ No se detectó ningún código en la foto.\n\nAsegúrate de:\n1. Que haya buena luz.\n2. Que la imagen no esté borrosa (aléjate un poco si es necesario).\n3. Que el código esté centrado.");
-      } finally {
-        setLoadingBarcode(false);
-      }
-    }
-  };
-
-
-  // --- LÓGICA FOTO PRODUCTO E IA (Igual que antes) ---
-  const takeProductPhotoAndProcess = async () => {
-    const imageSrc = webcamRef.current.getScreenshot();
-    setProductPhoto(imageSrc); // Guardamos la foto cruda y ocultamos cámara
-    setLoadingIA(true);
-
-    try {
-      console.log("Iniciando IA...");
-      // 1. IA Borrar fondo
-      const blobSinFondo = await removeBackground(imageSrc);
-      console.log("Fondo eliminado.");
-
-      // 2. Procesar en Canvas para fondo blanco
-      const imgBitmap = await createImageBitmap(blobSinFondo);
-      const canvas = document.createElement('canvas');
-      canvas.width = imgBitmap.width;
-      canvas.height = imgBitmap.height;
-      const ctx = canvas.getContext('2d');
-
-      ctx.fillStyle = '#FFFFFF'; // Fondo blanco
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(imgBitmap, 0, 0); // Dibujar producto encima
-
-      const finalUrl = canvas.toDataURL('image/png');
-      setProcessedImage(finalUrl);
-      
-      // 3. Descargar
-      downloadImage(finalUrl, barcode);
-
-    } catch (error) {
-      console.error("Error IA:", error);
-      alert("Error al procesar la imagen con IA. Revisa la consola (F12).");
-      // Si falla, permitimos reintentar volviendo a mostrar la cámara
-      setProductPhoto(null);
-    } finally {
-      setLoadingIA(false);
-    }
-  };
-
-  const downloadImage = (url, name) => {
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${name}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const reset = () => {
-    setBarcode(null);
-    setProductPhoto(null);
-    setProcessedImage(null);
-    setLoadingBarcode(false);
-    setLoadingIA(false);
-  };
-
-  // Configuración de cámara para intentar máxima calidad
+  // --- CONFIGURACIÓN DE CÁMARA (Maxima calidad posible) ---
   const videoConstraints = {
     width: { ideal: 1920 },
     height: { ideal: 1080 },
     facingMode: "environment"
   };
 
+  // ---------------------------------------------------------
+  // PASO 1: LEER EL CÓDIGO DE BARRAS (No borra fondo aqui)
+  // ---------------------------------------------------------
+  const capturarYLeerCodigo = async () => {
+    if (!webcamRef.current) return;
+    
+    const imageSrc = webcamRef.current.getScreenshot();
+    
+    if (imageSrc) {
+      try {
+        // Intentamos leer el código de la imagen estática
+        const result = await codeReader.current.decodeFromImage(undefined, imageSrc);
+        
+        // ¡ÉXITO! Guardamos el numero y cambiamos de paso
+        setBarcode(result.text);
+        setPaso('CONFIRMAR_CODIGO'); 
+        
+      } catch (err) {
+        console.log("No se detectó código en esta foto.");
+        alert("⚠️ No encontré ningún código de barras en la foto.\n\nIntenta:\n- Acercarte un poco más.\n- Que haya buena luz.\n- Que el código esté derecho.");
+      }
+    }
+  };
+
+  // ---------------------------------------------------------
+  // PASO 2: CONFIRMACIÓN
+  // ---------------------------------------------------------
+  const confirmarYPasarAFoto = () => {
+    setPaso('TOMAR_FOTO_PRODUCTO');
+  };
+
+  const reintentarEscaneo = () => {
+    setBarcode(null);
+    setPaso('ESCANEAR_CODIGO');
+  };
+
+  // ---------------------------------------------------------
+  // PASO 3: FOTO AL PRODUCTO (Aquí SI borramos fondo)
+  // ---------------------------------------------------------
+  const tomarFotoProductoYProcesar = async () => {
+    const imageSrc = webcamRef.current.getScreenshot();
+    setPaso('PROCESANDO');
+
+    try {
+      // 1. Usamos la IA para borrar fondo de ESTA imagen
+      const blobSinFondo = await removeBackground(imageSrc);
+
+      // 2. Crear Canvas para poner fondo blanco
+      const imgBitmap = await createImageBitmap(blobSinFondo);
+      const canvas = document.createElement('canvas');
+      canvas.width = imgBitmap.width;
+      canvas.height = imgBitmap.height;
+      const ctx = canvas.getContext('2d');
+
+      // 3. Pintar blanco
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // 4. Poner el producto encima
+      ctx.drawImage(imgBitmap, 0, 0);
+
+      // 5. Guardar
+      const finalUrl = canvas.toDataURL('image/png');
+      setImagenFinal(finalUrl);
+      
+      // 6. Descargar con el nombre del código
+      descargarImagen(finalUrl, barcode);
+      
+      setPaso('TERMINADO');
+
+    } catch (error) {
+      console.error(error);
+      alert("Error en la IA. Revisa la consola.");
+      setPaso('TOMAR_FOTO_PRODUCTO'); // Volver a intentar
+    }
+  };
+
+  const descargarImagen = (url, nombre) => {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${nombre}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const reiniciarTodo = () => {
+    setBarcode(null);
+    setImagenFinal(null);
+    setPaso('ESCANEAR_CODIGO');
+  };
+
   return (
     <div className="container">
-      <h1>Escáner v4 (Foto a Foto)</h1>
+      {/* HEADER SEGÚN EL PASO */}
+      <header className="app-header">
+        {paso === 'ESCANEAR_CODIGO' && <h1>Paso 1: Escanear Código</h1>}
+        {paso === 'CONFIRMAR_CODIGO' && <h1>Confirmar Código</h1>}
+        {paso === 'TOMAR_FOTO_PRODUCTO' && <h1>Paso 2: Foto del Producto</h1>}
+        {paso === 'PROCESANDO' && <h1>Procesando...</h1>}
+        {paso === 'TERMINADO' && <h1>¡Listo!</h1>}
+      </header>
 
-      {/* MOSTRAR CÁMARA SI: 
-        1. No hay error de cámara Y
-        2. (Aún no tenemos código de barras O Ya tenemos código pero aún no sacamos la foto del producto)
-      */}
-      {!cameraError && (!barcode || (barcode && !productPhoto)) && (
-        <div className="camera-wrapper">
+      {/* VISOR DE CÁMARA (Solo visible en pasos de captura) */}
+      {(paso === 'ESCANEAR_CODIGO' || paso === 'TOMAR_FOTO_PRODUCTO') && (
+        <div className="camera-container">
           <Webcam
             audio={false}
             ref={webcamRef}
-            screenshotFormat="image/png" // PNG es clave para la nitidez
+            screenshotFormat="image/png"
             videoConstraints={videoConstraints}
-            className="webcam"
-            onUserMediaError={(err) => setCameraError("No se pudo acceder a la cámara: " + err)}
+            className="webcam-view"
           />
-          {/* Guía visual */}
-          <div className="overlay-guide"></div>
+          {/* Guias visuales distintas para cada paso */}
+          {paso === 'ESCANEAR_CODIGO' ? (
+             <div className="overlay-barcode">
+               <p>Apunta al Código de Barras</p>
+               <div className="linea-roja"></div>
+             </div>
+          ) : (
+             <div className="overlay-product">
+               <p>Encuadra el Producto completo</p>
+             </div>
+          )}
         </div>
       )}
 
-      {cameraError && <p className="error">{cameraError}</p>}
-
-      <div className="controls">
+      {/* CONTROLES E INSTRUCCIONES */}
+      <div className="controls-area">
         
-        {/* --- PASO 1: Capturar Código de Barras --- */}
-        {!barcode && !loadingBarcode && (
-          <div>
-            <p>Paso 1: Apunta al código y sácale una foto.</p>
-            <button className="btn-primary btn-large" onClick={captureAndReadBarcode}>
-              📸 Sacar foto al Código de Barras
+        {/* -- CONTROLES PASO 1 -- */}
+        {paso === 'ESCANEAR_CODIGO' && (
+          <button className="btn-action" onClick={capturarYLeerCodigo}>
+            📸 Capturar Código
+          </button>
+        )}
+
+        {/* -- CONTROLES PASO 2 (Intermedio) -- */}
+        {paso === 'CONFIRMAR_CODIGO' && (
+          <div className="confirm-box">
+            <p>Código detectado:</p>
+            <h2 className="code-text">{barcode}</h2>
+            <div className="btn-group">
+              <button className="btn-secondary" onClick={reintentarEscaneo}>❌ No, reintentar</button>
+              <button className="btn-primary" onClick={confirmarYPasarAFoto}>✅ Sí, ir a foto producto</button>
+            </div>
+          </div>
+        )}
+
+        {/* -- CONTROLES PASO 3 -- */}
+        {paso === 'TOMAR_FOTO_PRODUCTO' && (
+          <div className="photo-controls">
+            <p className="info-text">El archivo se guardará como: <strong>{barcode}.png</strong></p>
+            <button className="btn-action btn-green" onClick={tomarFotoProductoYProcesar}>
+              📸 SACAR FOTO Y BORRAR FONDO
             </button>
           </div>
         )}
-        {loadingBarcode && <div className="loading">🧐 Analizando foto en busca de códigos...</div>}
 
-
-        {/* --- PASO 2: Capturar Producto --- */}
-        {barcode && !productPhoto && (
-          <div className="step-success">
-            <h2>Código detectado: <span style={{color: '#28a745'}}>{barcode}</span></h2>
-            <p>Paso 2: Ahora encuadra el producto completo.</p>
-            <button className="btn-primary btn-large" onClick={takeProductPhotoAndProcess} disabled={loadingIA}>
-              {loadingIA ? "Procesando IA..." : "📸 Sacar Foto Final del Producto"}
-            </button>
+        {/* -- PANTALLA DE CARGA -- */}
+        {paso === 'PROCESANDO' && (
+          <div className="loading-box">
+            <div className="spinner"></div>
+            <p>Eliminando fondo con IA...</p>
+            <p><small>Esto puede tardar unos segundos.</small></p>
           </div>
         )}
+
+        {/* -- RESULTADO FINAL -- */}
+        {paso === 'TERMINADO' && imagenFinal && (
+          <div className="result-box">
+            <img src={imagenFinal} alt="Resultado" className="final-img" />
+            <p>Guardado: <strong>{barcode}.png</strong></p>
+            <button className="btn-primary" onClick={reiniciarTodo}>🔄 Siguiente Producto</button>
+          </div>
+        )}
+
       </div>
-
-      {loadingIA && <div className="loading">⏳ Eliminando fondo e insertando fondo blanco...</div>}
-
-      {/* --- PASO 3: Resultado Final --- */}
-      {processedImage && (
-        <div className="result">
-          <h3>¡Proceso Terminado!</h3>
-          <img src={processedImage} alt="Resultado" className="preview-img" />
-          <p>Archivo guardado: <strong>{barcode}.png</strong></p>
-          <button onClick={reset} className="btn-secondary">Empezar Nuevo Producto</button>
-        </div>
-      )}
     </div>
   );
 }
