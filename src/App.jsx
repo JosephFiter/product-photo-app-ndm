@@ -1,31 +1,48 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import Webcam from 'react-webcam';
 import { BrowserMultiFormatReader } from '@zxing/library';
 import { removeBackground } from '@imgly/background-removal';
 import './App.css';
 
 function App() {
-  // --- ESTADOS ---
   const [paso, setPaso] = useState('ESCANEAR_CODIGO');
   const [barcode, setBarcode] = useState(null);
-  const [manualCode, setManualCode] = useState(""); // <--- NUEVO: Para input manual
+  const [manualCode, setManualCode] = useState("");
   
-  // Contador de fotos
+  // Estados para contabilidad de fotos
   const [contadorFotos, setContadorFotos] = useState(0);
   const [ultinaFotoURL, setUltimaFotoURL] = useState(null);
   
+  // --- NUEVO: ESTADOS PARA CÁMARAS ---
+  const [dispositivos, setDispositivos] = useState([]);
+  const [deviceId, setDeviceId] = useState(null); // ID de la cámara seleccionada
+
   const webcamRef = useRef(null);
   const codeReader = useRef(new BrowserMultiFormatReader());
 
+  // --- NUEVO: CARGAR LISTA DE CÁMARAS ---
+  const handleDevices = useCallback((mediaDevices) => {
+    // Filtramos solo las entradas de video (cámaras)
+    const videoDevices = mediaDevices.filter(({ kind }) => kind === "videoinput");
+    setDispositivos(videoDevices);
+  }, []);
+
+  useEffect(() => {
+    // Pedimos la lista de dispositivos al iniciar
+    navigator.mediaDevices.enumerateDevices().then(handleDevices);
+  }, [handleDevices]);
+
+  // --- NUEVO: CONFIGURACIÓN DINÁMICA DE CÁMARA ---
   const videoConstraints = {
     width: { ideal: 1920 },
     height: { ideal: 1080 },
-    facingMode: "environment"
+    // Si el usuario eligió una cámara específica, usamos su ID.
+    // Si no, usamos "environment" (trasera) por defecto.
+    deviceId: deviceId ? { exact: deviceId } : undefined,
+    facingMode: deviceId ? undefined : "environment"
   };
 
-  // ---------------------------------------------------------
-  // LÓGICA DE ESCANEO
-  // ---------------------------------------------------------
+  // Lógica de escaneo
   const capturarYLeerCodigo = async () => {
     if (!webcamRef.current) return;
     const imageSrc = webcamRef.current.getScreenshot();
@@ -36,14 +53,11 @@ function App() {
         setBarcode(result.text);
         setPaso('CONFIRMAR_CODIGO'); 
       } catch (err) {
-        alert("⚠️ No se detectó código. Intenta escribirlo manualmente abajo si no funciona.");
+        alert("⚠️ No se detectó código. Intenta escribirlo manualmente.");
       }
     }
   };
 
-  // ---------------------------------------------------------
-  // NUEVO: LÓGICA MANUAL (Inspirada en tu código)
-  // ---------------------------------------------------------
   const handleManualSubmit = () => {
     if (!manualCode.trim()) {
       alert("Por favor ingresa un código.");
@@ -51,7 +65,7 @@ function App() {
     }
     setBarcode(manualCode.trim());
     setPaso('CONFIRMAR_CODIGO');
-    setManualCode(""); // Limpiar input
+    setManualCode(""); 
   };
 
   const confirmarYPasarAFoto = () => {
@@ -65,9 +79,6 @@ function App() {
     setPaso('ESCANEAR_CODIGO');
   };
 
-  // ---------------------------------------------------------
-  // LÓGICA FOTO PRODUCTO
-  // ---------------------------------------------------------
   const tomarFotoProductoYProcesar = async () => {
     const imageSrc = webcamRef.current.getScreenshot();
     setPaso('PROCESANDO'); 
@@ -120,9 +131,29 @@ function App() {
   return (
     <div className="container">
       <header className="app-header">
-        {paso === 'ESCANEAR_CODIGO' && <h1>Escanear o Ingresar</h1>}
-        {(paso === 'TOMAR_FOTO_PRODUCTO' || paso === 'PROCESANDO') && <h1>Fotos de: {barcode}</h1>}
+        {paso === 'ESCANEAR_CODIGO' && <h1>Escanear</h1>}
+        {(paso === 'TOMAR_FOTO_PRODUCTO' || paso === 'PROCESANDO') && <h1>Fotos: {barcode}</h1>}
       </header>
+
+      {/* --- NUEVO: SELECTOR DE CÁMARA (Solo visible si hay más de 1 cámara) --- */}
+      {dispositivos.length > 0 && paso !== 'CONFIRMAR_CODIGO' && (
+        <div className="camera-select-container">
+          <select 
+            className="camera-select"
+            onChange={(e) => setDeviceId(e.target.value)}
+            value={deviceId || ""}
+          >
+            {/* Opción por defecto */}
+            {!deviceId && <option value="">Cámara Automática</option>}
+            
+            {dispositivos.map((device, key) => (
+              <option key={key} value={device.deviceId}>
+                {device.label || `Cámara ${key + 1}`}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* CÁMARA */}
       {(paso === 'ESCANEAR_CODIGO' || paso === 'TOMAR_FOTO_PRODUCTO' || paso === 'PROCESANDO') && (
@@ -133,6 +164,8 @@ function App() {
             screenshotFormat="image/png"
             videoConstraints={videoConstraints}
             className="webcam-view"
+            // Importante: Actualizar la lista cuando se conceden permisos
+            onUserMedia={() => navigator.mediaDevices.enumerateDevices().then(handleDevices)}
           />
           {paso === 'ESCANEAR_CODIGO' && (
              <div className="overlay-barcode"><div className="linea-roja"></div></div>
@@ -146,29 +179,23 @@ function App() {
         </div>
       )}
 
-      {/* ZONA DE CONTROLES */}
       <div className="controls-area">
-        
-        {/* PASO 1: Escanear O Manual */}
+        {/* PASO 1 */}
         {paso === 'ESCANEAR_CODIGO' && (
           <div className="scan-section">
             <button className="btn-action" onClick={capturarYLeerCodigo}>
-              📸 Escanear con Cámara
+              📸 Escanear
             </button>
-            
-            <div className="divider"><span>O ingresa manual</span></div>
-            
+            <div className="divider"><span>O manual</span></div>
             <div className="manual-input-box">
               <input 
                 type="text" 
-                placeholder="Ej: 779123456" 
+                placeholder="Ej: 779123" 
                 value={manualCode}
                 onChange={(e) => setManualCode(e.target.value)}
                 className="input-manual"
               />
-              <button className="btn-secondary" onClick={handleManualSubmit}>
-                Continuar
-              </button>
+              <button className="btn-secondary" onClick={handleManualSubmit}>OK</button>
             </div>
           </div>
         )}
@@ -206,7 +233,6 @@ function App() {
             </button>
           </div>
         )}
-
       </div>
     </div>
   );
