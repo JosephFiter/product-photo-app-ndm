@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useCallback } from 'react';
 import Webcam from 'react-webcam';
 import { BrowserMultiFormatReader } from '@zxing/library';
 import { removeBackground } from '@imgly/background-removal';
@@ -8,15 +8,15 @@ function App() {
   // --- ESTADOS ---
   const [paso, setPaso] = useState('ESCANEAR_CODIGO');
   const [barcode, setBarcode] = useState(null);
+  const [manualCode, setManualCode] = useState(""); // <--- NUEVO: Para input manual
   
-  // Nuevo: Contador de fotos para el producto actual
+  // Contador de fotos
   const [contadorFotos, setContadorFotos] = useState(0);
-  const [ultinaFotoURL, setUltimaFotoURL] = useState(null); // Para mostrar miniatura de la ultima
+  const [ultinaFotoURL, setUltimaFotoURL] = useState(null);
   
   const webcamRef = useRef(null);
   const codeReader = useRef(new BrowserMultiFormatReader());
 
-  // Configuración de cámara HD
   const videoConstraints = {
     width: { ideal: 1920 },
     height: { ideal: 1080 },
@@ -24,7 +24,7 @@ function App() {
   };
 
   // ---------------------------------------------------------
-  // PASO 1: LEER CÓDIGO
+  // LÓGICA DE ESCANEO
   // ---------------------------------------------------------
   const capturarYLeerCodigo = async () => {
     if (!webcamRef.current) return;
@@ -36,9 +36,28 @@ function App() {
         setBarcode(result.text);
         setPaso('CONFIRMAR_CODIGO'); 
       } catch (err) {
-        alert("⚠️ No encontré ningún código. Intenta acercarte o mejorar la luz.");
+        alert("⚠️ No se detectó código. Intenta escribirlo manualmente abajo si no funciona.");
       }
     }
+  };
+
+  // ---------------------------------------------------------
+  // NUEVO: LÓGICA MANUAL (Inspirada en tu código)
+  // ---------------------------------------------------------
+  const handleManualSubmit = () => {
+    if (!manualCode.trim()) {
+      alert("Por favor ingresa un código.");
+      return;
+    }
+    setBarcode(manualCode.trim());
+    setPaso('CONFIRMAR_CODIGO');
+    setManualCode(""); // Limpiar input
+  };
+
+  const confirmarYPasarAFoto = () => {
+    setContadorFotos(0);
+    setUltimaFotoURL(null);
+    setPaso('TOMAR_FOTO_PRODUCTO');
   };
 
   const reintentarEscaneo = () => {
@@ -46,62 +65,38 @@ function App() {
     setPaso('ESCANEAR_CODIGO');
   };
 
-  const confirmarYPasarAFoto = () => {
-    // Inicializamos el contador en 0 para este nuevo producto
-    setContadorFotos(0);
-    setUltimaFotoURL(null);
-    setPaso('TOMAR_FOTO_PRODUCTO');
-  };
-
   // ---------------------------------------------------------
-  // PASO 2: LOGICA DE MÚLTIPLES FOTOS
+  // LÓGICA FOTO PRODUCTO
   // ---------------------------------------------------------
   const tomarFotoProductoYProcesar = async () => {
     const imageSrc = webcamRef.current.getScreenshot();
-    
-    // Mostramos estado de carga pero NO cambiamos de pantalla completa,
-    // usamos un estado temporal o bloqueo de botón
     setPaso('PROCESANDO'); 
 
     try {
-      // 1. Procesar IA
       const blobSinFondo = await removeBackground(imageSrc);
-
-      // 2. Canvas fondo blanco
       const imgBitmap = await createImageBitmap(blobSinFondo);
+      
       const canvas = document.createElement('canvas');
       canvas.width = imgBitmap.width;
       canvas.height = imgBitmap.height;
       const ctx = canvas.getContext('2d');
+      
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(imgBitmap, 0, 0);
 
       const finalUrl = canvas.toDataURL('image/png');
       
-      // 3. Lógica de Nombres
-      let nombreArchivo = "";
-      if (contadorFotos === 0) {
-        // Primera foto: "7791234.png"
-        nombreArchivo = barcode;
-      } else {
-        // Siguientes: "7791234(1).png", "7791234(2).png"
-        nombreArchivo = `${barcode}(${contadorFotos})`;
-      }
-
-      // 4. Descargar
+      let nombreArchivo = contadorFotos === 0 ? barcode : `${barcode}(${contadorFotos})`;
       descargarImagen(finalUrl, nombreArchivo);
       
-      // 5. Actualizar estados para la siguiente
       setContadorFotos(prev => prev + 1);
-      setUltimaFotoURL(finalUrl); // Guardamos para mostrar "Última guardada"
-      
-      // Volvemos a habilitar la cámara para la siguiente foto
+      setUltimaFotoURL(finalUrl);
       setPaso('TOMAR_FOTO_PRODUCTO');
 
     } catch (error) {
       console.error(error);
-      alert("Error en la IA. Intenta de nuevo.");
+      alert("Error IA.");
       setPaso('TOMAR_FOTO_PRODUCTO');
     }
   };
@@ -116,7 +111,6 @@ function App() {
   };
 
   const terminarProducto = () => {
-    // Reiniciar todo para el siguiente producto
     setBarcode(null);
     setContadorFotos(0);
     setUltimaFotoURL(null);
@@ -126,14 +120,11 @@ function App() {
   return (
     <div className="container">
       <header className="app-header">
-        {paso === 'ESCANEAR_CODIGO' && <h1>Escanear Nuevo Producto</h1>}
-        {paso === 'CONFIRMAR_CODIGO' && <h1>Verificar</h1>}
-        {(paso === 'TOMAR_FOTO_PRODUCTO' || paso === 'PROCESANDO') && (
-          <h1>Fotos de: {barcode}</h1>
-        )}
+        {paso === 'ESCANEAR_CODIGO' && <h1>Escanear o Ingresar</h1>}
+        {(paso === 'TOMAR_FOTO_PRODUCTO' || paso === 'PROCESANDO') && <h1>Fotos de: {barcode}</h1>}
       </header>
 
-      {/* VISOR CÁMARA */}
+      {/* CÁMARA */}
       {(paso === 'ESCANEAR_CODIGO' || paso === 'TOMAR_FOTO_PRODUCTO' || paso === 'PROCESANDO') && (
         <div className="camera-container">
           <Webcam
@@ -146,46 +137,57 @@ function App() {
           {paso === 'ESCANEAR_CODIGO' && (
              <div className="overlay-barcode"><div className="linea-roja"></div></div>
           )}
-          {(paso === 'TOMAR_FOTO_PRODUCTO' || paso === 'PROCESANDO') && (
-             <div className="overlay-product"></div>
-          )}
-          
-          {/* Overlay de "Procesando" sobre la cámara */}
           {paso === 'PROCESANDO' && (
             <div className="overlay-loading">
               <div className="spinner"></div>
-              <p>Guardando foto {contadorFotos === 0 ? "" : `(${contadorFotos})`}...</p>
+              <p>Guardando foto...</p>
             </div>
           )}
         </div>
       )}
 
-      {/* CONTROLES */}
+      {/* ZONA DE CONTROLES */}
       <div className="controls-area">
         
-        {/* PASO 1 */}
+        {/* PASO 1: Escanear O Manual */}
         {paso === 'ESCANEAR_CODIGO' && (
-          <button className="btn-action" onClick={capturarYLeerCodigo}>
-            📸 Escanear Código
-          </button>
+          <div className="scan-section">
+            <button className="btn-action" onClick={capturarYLeerCodigo}>
+              📸 Escanear con Cámara
+            </button>
+            
+            <div className="divider"><span>O ingresa manual</span></div>
+            
+            <div className="manual-input-box">
+              <input 
+                type="text" 
+                placeholder="Ej: 779123456" 
+                value={manualCode}
+                onChange={(e) => setManualCode(e.target.value)}
+                className="input-manual"
+              />
+              <button className="btn-secondary" onClick={handleManualSubmit}>
+                Continuar
+              </button>
+            </div>
+          </div>
         )}
 
-        {/* PASO 2: Confirmación */}
+        {/* PASO 2: Confirmar */}
         {paso === 'CONFIRMAR_CODIGO' && (
           <div className="confirm-box">
+            <p>Producto:</p>
             <h2>{barcode}</h2>
             <div className="btn-group">
-              <button className="btn-secondary" onClick={reintentarEscaneo}>❌ Reintentar</button>
+              <button className="btn-secondary" onClick={reintentarEscaneo}>❌ Corregir</button>
               <button className="btn-primary" onClick={confirmarYPasarAFoto}>✅ Aceptar</button>
             </div>
           </div>
         )}
 
-        {/* PASO 3: FOTOS MÚLTIPLES */}
+        {/* PASO 3: Fotos */}
         {(paso === 'TOMAR_FOTO_PRODUCTO' || paso === 'PROCESANDO') && (
           <div className="photo-controls">
-            
-            {/* Botón de disparo */}
             <button 
               className="btn-action btn-green" 
               onClick={tomarFotoProductoYProcesar}
@@ -194,20 +196,13 @@ function App() {
               {paso === 'PROCESANDO' ? "Procesando..." : "📸 SACAR FOTO"}
             </button>
 
-            {/* Info de fotos tomadas */}
             <div className="stats-box">
-              <p>Fotos guardadas: <strong>{contadorFotos}</strong></p>
-              {ultinaFotoURL && (
-                <div className="mini-preview">
-                  <img src={ultinaFotoURL} alt="Ultima" />
-                  <span>Última guardada</span>
-                </div>
-              )}
+              <p>Fotos: <strong>{contadorFotos}</strong></p>
+              {ultinaFotoURL && <img src={ultinaFotoURL} alt="Mini" className="mini-thumb"/>}
             </div>
 
-            {/* Botón para salir */}
             <button className="btn-secondary full-width" onClick={terminarProducto}>
-              🏁 Terminar este producto / Escanear otro
+              🏁 Finalizar Producto
             </button>
           </div>
         )}

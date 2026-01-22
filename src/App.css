@@ -80,3 +80,36 @@
   animation: spin 1s linear infinite; margin-bottom: 10px;
 }
 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+/* ... Manten el resto del CSS anterior y agrega/reemplaza esto ... */
+
+.divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: 15px 0;
+  color: #777;
+}
+.divider::before, .divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid #ddd;
+}
+.divider span { padding: 0 10px; font-size: 0.9rem; }
+
+.manual-input-box {
+  display: flex;
+  gap: 10px;
+}
+
+.input-manual {
+  flex: 1;
+  padding: 12px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 1rem;
+}
+
+.mini-thumb {
+  width: 40px; height: 40px; border-radius: 4px; border: 1px solid #999; object-fit: cover;
+}
