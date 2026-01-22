@@ -1,25 +1,22 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState } from 'react';
 import Webcam from 'react-webcam';
 import { BrowserMultiFormatReader } from '@zxing/library';
 import { removeBackground } from '@imgly/background-removal';
 import './App.css';
 
 function App() {
-  // --- ESTADOS DE LA APP ---
-  // Paso 1: 'ESCANEAR_CODIGO'
-  // Paso 2: 'CONFIRMAR_CODIGO' (Vemos el numero y decidimos si pasar a la foto)
-  // Paso 3: 'TOMAR_FOTO_PRODUCTO' (Aquí sacamos la foto real)
-  // Paso 4: 'PROCESANDO' (IA trabajando)
-  // Paso 5: 'TERMINADO'
+  // --- ESTADOS ---
   const [paso, setPaso] = useState('ESCANEAR_CODIGO');
-  
   const [barcode, setBarcode] = useState(null);
-  const [imagenFinal, setImagenFinal] = useState(null);
+  
+  // Nuevo: Contador de fotos para el producto actual
+  const [contadorFotos, setContadorFotos] = useState(0);
+  const [ultinaFotoURL, setUltimaFotoURL] = useState(null); // Para mostrar miniatura de la ultima
   
   const webcamRef = useRef(null);
   const codeReader = useRef(new BrowserMultiFormatReader());
 
-  // --- CONFIGURACIÓN DE CÁMARA (Maxima calidad posible) ---
+  // Configuración de cámara HD
   const videoConstraints = {
     width: { ideal: 1920 },
     height: { ideal: 1080 },
@@ -27,34 +24,21 @@ function App() {
   };
 
   // ---------------------------------------------------------
-  // PASO 1: LEER EL CÓDIGO DE BARRAS (No borra fondo aqui)
+  // PASO 1: LEER CÓDIGO
   // ---------------------------------------------------------
   const capturarYLeerCodigo = async () => {
     if (!webcamRef.current) return;
-    
     const imageSrc = webcamRef.current.getScreenshot();
     
     if (imageSrc) {
       try {
-        // Intentamos leer el código de la imagen estática
         const result = await codeReader.current.decodeFromImage(undefined, imageSrc);
-        
-        // ¡ÉXITO! Guardamos el numero y cambiamos de paso
         setBarcode(result.text);
         setPaso('CONFIRMAR_CODIGO'); 
-        
       } catch (err) {
-        console.log("No se detectó código en esta foto.");
-        alert("⚠️ No encontré ningún código de barras en la foto.\n\nIntenta:\n- Acercarte un poco más.\n- Que haya buena luz.\n- Que el código esté derecho.");
+        alert("⚠️ No encontré ningún código. Intenta acercarte o mejorar la luz.");
       }
     }
-  };
-
-  // ---------------------------------------------------------
-  // PASO 2: CONFIRMACIÓN
-  // ---------------------------------------------------------
-  const confirmarYPasarAFoto = () => {
-    setPaso('TOMAR_FOTO_PRODUCTO');
   };
 
   const reintentarEscaneo = () => {
@@ -62,44 +46,63 @@ function App() {
     setPaso('ESCANEAR_CODIGO');
   };
 
+  const confirmarYPasarAFoto = () => {
+    // Inicializamos el contador en 0 para este nuevo producto
+    setContadorFotos(0);
+    setUltimaFotoURL(null);
+    setPaso('TOMAR_FOTO_PRODUCTO');
+  };
+
   // ---------------------------------------------------------
-  // PASO 3: FOTO AL PRODUCTO (Aquí SI borramos fondo)
+  // PASO 2: LOGICA DE MÚLTIPLES FOTOS
   // ---------------------------------------------------------
   const tomarFotoProductoYProcesar = async () => {
     const imageSrc = webcamRef.current.getScreenshot();
-    setPaso('PROCESANDO');
+    
+    // Mostramos estado de carga pero NO cambiamos de pantalla completa,
+    // usamos un estado temporal o bloqueo de botón
+    setPaso('PROCESANDO'); 
 
     try {
-      // 1. Usamos la IA para borrar fondo de ESTA imagen
+      // 1. Procesar IA
       const blobSinFondo = await removeBackground(imageSrc);
 
-      // 2. Crear Canvas para poner fondo blanco
+      // 2. Canvas fondo blanco
       const imgBitmap = await createImageBitmap(blobSinFondo);
       const canvas = document.createElement('canvas');
       canvas.width = imgBitmap.width;
       canvas.height = imgBitmap.height;
       const ctx = canvas.getContext('2d');
-
-      // 3. Pintar blanco
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      
-      // 4. Poner el producto encima
       ctx.drawImage(imgBitmap, 0, 0);
 
-      // 5. Guardar
       const finalUrl = canvas.toDataURL('image/png');
-      setImagenFinal(finalUrl);
       
-      // 6. Descargar con el nombre del código
-      descargarImagen(finalUrl, barcode);
+      // 3. Lógica de Nombres
+      let nombreArchivo = "";
+      if (contadorFotos === 0) {
+        // Primera foto: "7791234.png"
+        nombreArchivo = barcode;
+      } else {
+        // Siguientes: "7791234(1).png", "7791234(2).png"
+        nombreArchivo = `${barcode}(${contadorFotos})`;
+      }
+
+      // 4. Descargar
+      descargarImagen(finalUrl, nombreArchivo);
       
-      setPaso('TERMINADO');
+      // 5. Actualizar estados para la siguiente
+      setContadorFotos(prev => prev + 1);
+      setUltimaFotoURL(finalUrl); // Guardamos para mostrar "Última guardada"
+      
+      // Volvemos a habilitar la cámara para la siguiente foto
+      setPaso('TOMAR_FOTO_PRODUCTO');
 
     } catch (error) {
       console.error(error);
-      alert("Error en la IA. Revisa la consola.");
-      setPaso('TOMAR_FOTO_PRODUCTO'); // Volver a intentar
+      alert("Error en la IA. Intenta de nuevo.");
+      setPaso('TOMAR_FOTO_PRODUCTO');
     }
   };
 
@@ -112,25 +115,26 @@ function App() {
     document.body.removeChild(link);
   };
 
-  const reiniciarTodo = () => {
+  const terminarProducto = () => {
+    // Reiniciar todo para el siguiente producto
     setBarcode(null);
-    setImagenFinal(null);
+    setContadorFotos(0);
+    setUltimaFotoURL(null);
     setPaso('ESCANEAR_CODIGO');
   };
 
   return (
     <div className="container">
-      {/* HEADER SEGÚN EL PASO */}
       <header className="app-header">
-        {paso === 'ESCANEAR_CODIGO' && <h1>Paso 1: Escanear Código</h1>}
-        {paso === 'CONFIRMAR_CODIGO' && <h1>Confirmar Código</h1>}
-        {paso === 'TOMAR_FOTO_PRODUCTO' && <h1>Paso 2: Foto del Producto</h1>}
-        {paso === 'PROCESANDO' && <h1>Procesando...</h1>}
-        {paso === 'TERMINADO' && <h1>¡Listo!</h1>}
+        {paso === 'ESCANEAR_CODIGO' && <h1>Escanear Nuevo Producto</h1>}
+        {paso === 'CONFIRMAR_CODIGO' && <h1>Verificar</h1>}
+        {(paso === 'TOMAR_FOTO_PRODUCTO' || paso === 'PROCESANDO') && (
+          <h1>Fotos de: {barcode}</h1>
+        )}
       </header>
 
-      {/* VISOR DE CÁMARA (Solo visible en pasos de captura) */}
-      {(paso === 'ESCANEAR_CODIGO' || paso === 'TOMAR_FOTO_PRODUCTO') && (
+      {/* VISOR CÁMARA */}
+      {(paso === 'ESCANEAR_CODIGO' || paso === 'TOMAR_FOTO_PRODUCTO' || paso === 'PROCESANDO') && (
         <div className="camera-container">
           <Webcam
             audio={false}
@@ -139,67 +143,72 @@ function App() {
             videoConstraints={videoConstraints}
             className="webcam-view"
           />
-          {/* Guias visuales distintas para cada paso */}
-          {paso === 'ESCANEAR_CODIGO' ? (
-             <div className="overlay-barcode">
-               <p>Apunta al Código de Barras</p>
-               <div className="linea-roja"></div>
-             </div>
-          ) : (
-             <div className="overlay-product">
-               <p>Encuadra el Producto completo</p>
-             </div>
+          {paso === 'ESCANEAR_CODIGO' && (
+             <div className="overlay-barcode"><div className="linea-roja"></div></div>
+          )}
+          {(paso === 'TOMAR_FOTO_PRODUCTO' || paso === 'PROCESANDO') && (
+             <div className="overlay-product"></div>
+          )}
+          
+          {/* Overlay de "Procesando" sobre la cámara */}
+          {paso === 'PROCESANDO' && (
+            <div className="overlay-loading">
+              <div className="spinner"></div>
+              <p>Guardando foto {contadorFotos === 0 ? "" : `(${contadorFotos})`}...</p>
+            </div>
           )}
         </div>
       )}
 
-      {/* CONTROLES E INSTRUCCIONES */}
+      {/* CONTROLES */}
       <div className="controls-area">
         
-        {/* -- CONTROLES PASO 1 -- */}
+        {/* PASO 1 */}
         {paso === 'ESCANEAR_CODIGO' && (
           <button className="btn-action" onClick={capturarYLeerCodigo}>
-            📸 Capturar Código
+            📸 Escanear Código
           </button>
         )}
 
-        {/* -- CONTROLES PASO 2 (Intermedio) -- */}
+        {/* PASO 2: Confirmación */}
         {paso === 'CONFIRMAR_CODIGO' && (
           <div className="confirm-box">
-            <p>Código detectado:</p>
-            <h2 className="code-text">{barcode}</h2>
+            <h2>{barcode}</h2>
             <div className="btn-group">
-              <button className="btn-secondary" onClick={reintentarEscaneo}>❌ No, reintentar</button>
-              <button className="btn-primary" onClick={confirmarYPasarAFoto}>✅ Sí, ir a foto producto</button>
+              <button className="btn-secondary" onClick={reintentarEscaneo}>❌ Reintentar</button>
+              <button className="btn-primary" onClick={confirmarYPasarAFoto}>✅ Aceptar</button>
             </div>
           </div>
         )}
 
-        {/* -- CONTROLES PASO 3 -- */}
-        {paso === 'TOMAR_FOTO_PRODUCTO' && (
+        {/* PASO 3: FOTOS MÚLTIPLES */}
+        {(paso === 'TOMAR_FOTO_PRODUCTO' || paso === 'PROCESANDO') && (
           <div className="photo-controls">
-            <p className="info-text">El archivo se guardará como: <strong>{barcode}.png</strong></p>
-            <button className="btn-action btn-green" onClick={tomarFotoProductoYProcesar}>
-              📸 SACAR FOTO Y BORRAR FONDO
+            
+            {/* Botón de disparo */}
+            <button 
+              className="btn-action btn-green" 
+              onClick={tomarFotoProductoYProcesar}
+              disabled={paso === 'PROCESANDO'}
+            >
+              {paso === 'PROCESANDO' ? "Procesando..." : "📸 SACAR FOTO"}
             </button>
-          </div>
-        )}
 
-        {/* -- PANTALLA DE CARGA -- */}
-        {paso === 'PROCESANDO' && (
-          <div className="loading-box">
-            <div className="spinner"></div>
-            <p>Eliminando fondo con IA...</p>
-            <p><small>Esto puede tardar unos segundos.</small></p>
-          </div>
-        )}
+            {/* Info de fotos tomadas */}
+            <div className="stats-box">
+              <p>Fotos guardadas: <strong>{contadorFotos}</strong></p>
+              {ultinaFotoURL && (
+                <div className="mini-preview">
+                  <img src={ultinaFotoURL} alt="Ultima" />
+                  <span>Última guardada</span>
+                </div>
+              )}
+            </div>
 
-        {/* -- RESULTADO FINAL -- */}
-        {paso === 'TERMINADO' && imagenFinal && (
-          <div className="result-box">
-            <img src={imagenFinal} alt="Resultado" className="final-img" />
-            <p>Guardado: <strong>{barcode}.png</strong></p>
-            <button className="btn-primary" onClick={reiniciarTodo}>🔄 Siguiente Producto</button>
+            {/* Botón para salir */}
+            <button className="btn-secondary full-width" onClick={terminarProducto}>
+              🏁 Terminar este producto / Escanear otro
+            </button>
           </div>
         )}
 

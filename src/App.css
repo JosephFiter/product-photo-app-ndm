@@ -3,7 +3,8 @@
   margin: 0 auto;
   text-align: center;
   font-family: sans-serif;
-  padding: 20px;
+  padding: 10px;
+  padding-bottom: 50px;
 }
 
 .camera-container {
@@ -13,124 +14,69 @@
   overflow: hidden;
   background: black;
   border: 4px solid #333;
-  margin-bottom: 20px;
+  margin-bottom: 15px;
 }
 
-.webcam-view {
-  width: 100%;
-  display: block;
-}
+.webcam-view { width: 100%; display: block; }
 
-/* Overlay para escanear código */
+/* Overlays */
 .overlay-barcode {
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  color: white;
-  text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  display: flex; justify-content: center; align-items: center;
 }
-
 .linea-roja {
-  width: 80%;
-  height: 2px;
-  background: red;
-  box-shadow: 0 0 10px red;
-  margin-top: 10px;
+  width: 80%; height: 2px; background: red; box-shadow: 0 0 10px red;
 }
 
-/* Overlay para foto producto */
 .overlay-product {
-  position: absolute;
-  top: 20px; left: 20px; right: 20px; bottom: 20px;
-  border: 2px dashed rgba(255, 255, 255, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: flex-end;
-  color: rgba(255,255,255,0.8);
-  padding-bottom: 10px;
-  pointer-events: none;
+  position: absolute; top: 20px; left: 20px; right: 20px; bottom: 20px;
+  border: 2px dashed rgba(255,255,255,0.5); pointer-events: none;
 }
 
-/* Botones y Textos */
+/* Overlay de carga que bloquea la camara mientras procesa */
+.overlay-loading {
+  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex; flex-direction: column;
+  justify-content: center; align-items: center;
+  color: white; font-weight: bold;
+}
+
+/* Botones */
 .btn-action {
-  width: 100%;
-  padding: 15px;
-  font-size: 1.2rem;
-  background: #007bff;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: bold;
-}
-
-.btn-green {
-  background: #28a745;
-}
-
-.confirm-box {
-  background: #f8f9fa;
-  padding: 20px;
-  border-radius: 10px;
-  border: 1px solid #ddd;
-}
-
-.code-text {
-  font-size: 2rem;
-  color: #333;
-  letter-spacing: 2px;
-  margin: 10px 0;
-}
-
-.btn-group {
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-  margin-top: 15px;
-}
-
-.btn-secondary {
-  background: #6c757d;
-  color: white;
-  padding: 10px 20px;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-}
-
-.btn-primary {
-  background: #007bff;
-  color: white;
-  padding: 10px 20px;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-}
-
-.final-img {
-  max-width: 100%;
-  border: 2px solid #ccc;
+  width: 100%; padding: 15px; font-size: 1.2rem;
+  background: #007bff; color: white;
+  border: none; border-radius: 8px; cursor: pointer;
   margin-bottom: 10px;
 }
+.btn-action:disabled { background: #555; cursor: wait; }
+.btn-green { background: #28a745; }
+.btn-secondary {
+  background: #6c757d; color: white; padding: 10px;
+  border: none; border-radius: 5px; cursor: pointer;
+}
+.full-width { width: 100%; margin-top: 10px; padding: 15px; }
 
-.loading-box {
-  padding: 20px;
+/* Cajas de info */
+.confirm-box { background: #f8f9fa; padding: 20px; border-radius: 10px; border: 1px solid #ddd; }
+.btn-group { display: flex; gap: 10px; justify-content: center; margin-top: 10px; }
+
+.stats-box {
+  background: #f1f1f1; padding: 10px; border-radius: 8px;
+  margin-top: 10px; display: flex; align-items: center;
+  justify-content: space-between;
+}
+
+.mini-preview {
+  display: flex; align-items: center; gap: 10px; font-size: 0.8rem;
+}
+.mini-preview img {
+  width: 40px; height: 40px; object-fit: cover; border-radius: 4px; border: 1px solid #999;
 }
 
 .spinner {
-  border: 4px solid #f3f3f3;
-  border-top: 4px solid #3498db;
-  border-radius: 50%;
-  width: 40px;
-  height: 40px;
-  animation: spin 1s linear infinite;
-  margin: 0 auto 15px auto;
+  border: 4px solid rgba(255,255,255,0.3); border-top: 4px solid white;
+  border-radius: 50%; width: 40px; height: 40px;
+  animation: spin 1s linear infinite; margin-bottom: 10px;
 }
-
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
